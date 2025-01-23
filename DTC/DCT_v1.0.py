@@ -63,35 +63,32 @@ def split_into_words(text):
     pattern = r'(\w+|[^\w\s]+|\s+)'
     return re.findall(pattern, text)
 
-def create_word_dictionary(words, library):
+def create_word_dictionary(words):
     """
-    Создает словарь слов с частотой и уникальным кодом, используя существующую библиотеку.
+    Создает словарь слов с частотой и уникальным кодом.
 
     :param words: Список слов.
-    :param library: Существующая библиотека слов с кодами.
-    :return: Словарь с новыми словами и их кодами, обновленная библиотека.
+    :return: Словарь с кодами слов и обратный словарь для декодирования.
     """
     # Подсчитываем частоту слов
     frequency = {}
     for word in words:
         frequency[word] = frequency.get(word, 0) + 1
 
-    # Отфильтровываем слова, которые уже есть в библиотеке
-    new_words = {word: freq for word, freq in frequency.items() if word not in library}
+    # Сортируем слова по частоте (по убыванию) и по длине (по убыванию)
+    sorted_words = sorted(frequency.items(), key=lambda x: (-x[1], -len(x[0])))
 
-    # Сортируем новые слова по частоте (по убыванию) и по длине (по убыванию)
-    sorted_new_words = sorted(new_words.items(), key=lambda x: (-x[1], -len(x[0])))
+    # Генерируем уникальные коды
+    codes = generate_codes(len(sorted_words))
 
-    # Генерируем уникальные коды для новых слов
-    new_codes = generate_codes(len(sorted_new_words))
+    # Создаем словарь с кодами и обратный словарь для декодирования
+    word_dict = {}
+    reverse_dict = {}
+    for i, (word, freq) in enumerate(sorted_words):
+        word_dict[word] = codes[i]
+        reverse_dict[codes[i]] = word
 
-    # Создаем словарь с новыми кодами
-    new_word_dict = {}
-    for i, (word, freq) in enumerate(sorted_new_words):
-        new_word_dict[word] = new_codes[i]
-        library[word] = new_codes[i]  # Добавляем в библиотеку
-
-    return new_word_dict, library
+    return word_dict, reverse_dict
 
 def generate_codes(count):
     """
@@ -176,9 +173,7 @@ def load_library(library_filename):
         with open(library_filename, 'r', encoding='utf-8') as file:
             library = json.load(file)
     except FileNotFoundError:
-        print(f"Файл библиотеки '{library_filename}' не найден. Создан новый файл.")
-        with open(library_filename, 'w', encoding='utf-8') as file:
-            json.dump(library, file, ensure_ascii=False, indent=4)
+        print(f"Файл библиотеки '{library_filename}' не найден.")
     except IOError as e:
         print(f"Ошибка при чтении файла библиотеки '{library_filename}': {e}")
     return library
@@ -200,7 +195,7 @@ def main():
             return
 
         # Разделение текста на токены
-        tokens = split_into_words(file_line)
+        tokens = split_into_words(sanitize_text(file_line))
 
         # Загрузка существующей библиотеки
         library_filename = 'library.json'
@@ -210,7 +205,7 @@ def main():
         new_word_dict, reverse_dict = create_word_dictionary(tokens, library)
 
         # Зашифровывание текста
-        encrypted_text = encrypt_text(file_line, new_word_dict)
+        encrypted_text = encrypt_text(sanitized_text, new_word_dict)
 
         # Ввод имени выходного файла
         output_filename = input("Введите имя выходного файла (с расширением .dtc): ")
