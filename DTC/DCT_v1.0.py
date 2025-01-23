@@ -126,6 +126,22 @@ def generate_codes(count):
 
     return list(codes)
 
+
+import re
+
+
+def split_into_words(text):
+    """
+    Разделяет текст на слова и разделители.
+
+    :param text: Исходный текст.
+    :return: Список слов и разделителей.
+    """
+    # Шаблон для поиска слов и разделителей
+    pattern = r'(\w+|[^\w\s]+|\s+)'
+    return re.findall(pattern, text)
+
+
 def encrypt_text(text, word_dict):
     """
     Зашифровывает текст, используя словарь слов.
@@ -136,12 +152,16 @@ def encrypt_text(text, word_dict):
     """
     tokens = split_into_words(text)
     encrypted_tokens = []
+
     for token in tokens:
-        if token in word_dict:
-            encrypted_tokens.append(word_dict[token])
+        if token.strip() in word_dict:  # Убираем пробелы перед проверкой
+            encrypted_tokens.append(word_dict[token.strip()])
         else:
             encrypted_tokens.append(token)
-    return ' '.join(encrypted_tokens)
+
+    # Используем join без пробела, чтобы сохранить разделители
+    return ''.join(encrypted_tokens)
+
 
 def decrypt_text(encrypted_text, reverse_dict):
     """
@@ -151,14 +171,51 @@ def decrypt_text(encrypted_text, reverse_dict):
     :param reverse_dict: Обратный словарь для декодирования.
     :return: Исходный текст.
     """
-    tokens = encrypted_text.split()
+    tokens = split_into_words(encrypted_text)
     decrypted_tokens = []
+
     for token in tokens:
-        if token in reverse_dict:
-            decrypted_tokens.append(reverse_dict[token])
+        if token.strip() in reverse_dict:  # Убираем пробелы перед проверкой
+            decrypted_tokens.append(reverse_dict[token.strip()])
         else:
             decrypted_tokens.append(token)
-    return ' '.join(decrypted_tokens)
+
+    # Используем join без пробела, чтобы сохранить разделители
+    return ''.join(decrypted_tokens)
+
+# def encrypt_text(text, word_dict):
+#     """
+#     Зашифровывает текст, используя словарь слов.
+#
+#     :param text: Исходный текст.
+#     :param word_dict: Словарь с кодами слов.
+#     :return: Зашифрованная строка.
+#     """
+#     tokens = split_into_words(text)
+#     encrypted_tokens = []
+#     for token in tokens:
+#         if token in word_dict:
+#             encrypted_tokens.append(word_dict[token])
+#         else:
+#             encrypted_tokens.append(token)
+#     return ' '.join(encrypted_tokens)
+#
+# def decrypt_text(encrypted_text, reverse_dict):
+#     """
+#     Расшифровывает текст, используя обратный словарь.
+#
+#     :param encrypted_text: Зашифрованная строка.
+#     :param reverse_dict: Обратный словарь для декодирования.
+#     :return: Исходный текст.
+#     """
+#     tokens = encrypted_text.split()
+#     decrypted_tokens = []
+#     for token in tokens:
+#         if token in reverse_dict:
+#             decrypted_tokens.append(reverse_dict[token])
+#         else:
+#             decrypted_tokens.append(token)
+#     return ' '.join(decrypted_tokens)
 
 def save_library(library, library_filename):
     """
