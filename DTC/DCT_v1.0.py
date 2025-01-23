@@ -66,17 +66,28 @@ def split_into_words(text):
 
 def sanitize_text(text):
     """
-    Очищает текст от недопустимых символов и заменяет их на '#', заменяет перенос строки на '|'.
+    Очищает текст, сохраняя все кириллические символы, знаки препинания и специальные символы.
 
     :param text: Исходный текст.
     :return: Очищенный текст.
     """
-    # Определяем допустимые символы (буквы, цифры, пробелы и знаки препинания)
-    allowed_chars = string.ascii_letters + string.digits + string.punctuation + ' '
-    # Заменяем недопустимые символы на '#'
-    sanitized_text = ''.join([char if char in allowed_chars else '#' for char in text])
-    # Заменяем символы переноса строки на '|'
-    sanitized_text = sanitized_text.replace('\n', '|')
+    # Определяем допустимые символы:
+    # - Латинские буквы в верхнем и нижнем регистре
+    # - Кириллические буквы в верхнем и нижнем регистре
+    # - Цифры
+    # - Знаки препинания
+    # - Специальные символы, включая символы ввода и переноса строки
+    allowed_chars = string.ascii_letters + \
+                   "".join([chr(i) for i in range(ord('А'), ord('я')+1)]) + \
+                   string.digits + \
+                   string.punctuation + \
+                   " " + \
+                   "\n" + \
+                   "\r"
+
+    # Заменяем недопустимые символы на пробел
+    sanitized_text = ''.join([char if char in allowed_chars else ' ' for char in text])
+
     return sanitized_text
 
 def create_word_dictionary(words):
@@ -94,17 +105,26 @@ def create_word_dictionary(words):
     # Сортируем слова по частоте (по убыванию) и по длине (по убыванию)
     sorted_words = sorted(frequency.items(), key=lambda x: (-x[1], -len(x[0])))
 
-    # Генерируем уникальные коды
-    codes = generate_codes(len(sorted_words))
+    # Загружаем существующую библиотеку
+    library_filename = 'library.txt'
+    library = load_library(library_filename)
 
-    # Создаем словарь с кодами и обратный словарь для декодирования
-    word_dict = {}
-    reverse_dict = {}
-    for i, (word, freq) in enumerate(sorted_words):
-        word_dict[word] = codes[i]
-        reverse_dict[codes[i]] = word
+    # Отфильтровываем слова, которые уже есть в библиотеке
+    new_words = {word: freq for word, freq in sorted_words if word not in library}
 
-    return word_dict, reverse_dict
+    # Генерируем уникальные коды для новых слов
+    new_codes = generate_codes(len(new_words))
+
+    # Создаем словарь с новыми кодами
+    new_word_dict = {}
+    for i, (word, freq) in enumerate(new_words.items()):
+        new_word_dict[word] = new_codes[i]
+        library[word] = new_codes[i]  # Добавляем в библиотеку
+
+    # Сохраняем обновленную библиотеку
+    save_library(library, library_filename)
+
+    return new_word_dict, library
 
 def generate_codes(count):
     """
@@ -184,9 +204,7 @@ def load_library(library_filename):
                     if word not in library and code not in library.values():
                         library[word] = code
     except FileNotFoundError:
-        print(f"Файл библиотеки '{library_filename}' не найден. Создан новый файл.")
-        with open(library_filename, 'w', encoding='utf-8') as file:
-            pass
+        print(f"Файл библиотеки '{library_filename}' не найден.")
     except IOError as e:
         print(f"Ошибка при чтении файла библиотеки '{library_filename}': {e}")
     return library
@@ -207,10 +225,8 @@ def main():
         if not file_line:
             return
 
-        # Очистка текста от недопустимых символов
+        # Очистка текста
         sanitized_text = sanitize_text(file_line)
-        if file_line != sanitized_text:
-            print("Обнаружены недопустимые символы. Они были заменены на '#'.")
 
         # Разбиение строки на слова и знаки препинания
         tokens = split_into_words(sanitized_text)
@@ -220,7 +236,7 @@ def main():
         library = load_library(library_filename)
 
         # Создание словаря новых слов и обновление библиотеки
-        new_word_dict, reverse_dict = create_word_dictionary(tokens)
+        new_word_dict, library = create_word_dictionary(tokens)
 
         # Зашифровывание текста
         encrypted_text = encrypt_text(sanitized_text, new_word_dict)
