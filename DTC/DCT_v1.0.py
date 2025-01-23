@@ -2,6 +2,7 @@ import string
 import random
 import os
 import re
+import json
 from itertools import product
 
 def load_file(filename, encoding='utf-8'):
@@ -66,29 +67,15 @@ def split_into_words(text):
 
 def sanitize_text(text):
     """
-    Очищает текст, сохраняя все кириллические символы, знаки препинания и специальные символы.
+    Очищает текст, заменяя тире на '-', сохраняя все кириллические символы и знаки препинания.
 
     :param text: Исходный текст.
     :return: Очищенный текст.
     """
-    # Определяем допустимые символы:
-    # - Латинские буквы в верхнем и нижнем регистре
-    # - Кириллические буквы в верхнем и нижнем регистре
-    # - Цифры
-    # - Знаки препинания
-    # - Специальные символы, включая символы ввода и переноса строки
-    allowed_chars = string.ascii_letters + \
-                   "".join([chr(i) for i in range(ord('А'), ord('я')+1)]) + \
-                   string.digits + \
-                   string.punctuation + \
-                   " " + \
-                   "\n" + \
-                   "\r"
+    # Заменяем все виды тире на '-'
+    text = text.replace('—', '-').replace('–', '-').replace('—', '-')
 
-    # Заменяем недопустимые символы на пробел
-    sanitized_text = ''.join([char if char in allowed_chars else ' ' for char in text])
-
-    return sanitized_text
+    return text
 
 def create_word_dictionary(words):
     """
@@ -105,26 +92,17 @@ def create_word_dictionary(words):
     # Сортируем слова по частоте (по убыванию) и по длине (по убыванию)
     sorted_words = sorted(frequency.items(), key=lambda x: (-x[1], -len(x[0])))
 
-    # Загружаем существующую библиотеку
-    library_filename = 'library.txt'
-    library = load_library(library_filename)
+    # Генерируем уникальные коды
+    codes = generate_codes(len(sorted_words))
 
-    # Отфильтровываем слова, которые уже есть в библиотеке
-    new_words = {word: freq for word, freq in sorted_words if word not in library}
+    # Создаем словарь с кодами и обратный словарь для декодирования
+    word_dict = {}
+    reverse_dict = {}
+    for i, (word, freq) in enumerate(sorted_words):
+        word_dict[word] = codes[i]
+        reverse_dict[codes[i]] = word
 
-    # Генерируем уникальные коды для новых слов
-    new_codes = generate_codes(len(new_words))
-
-    # Создаем словарь с новыми кодами
-    new_word_dict = {}
-    for i, (word, freq) in enumerate(new_words.items()):
-        new_word_dict[word] = new_codes[i]
-        library[word] = new_codes[i]  # Добавляем в библиотеку
-
-    # Сохраняем обновленную библиотеку
-    save_library(library, library_filename)
-
-    return new_word_dict, library
+    return word_dict, reverse_dict
 
 def generate_codes(count):
     """
@@ -172,25 +150,24 @@ def decrypt_text(encrypted_text, reverse_dict):
     """
     tokens = encrypted_text.split()
     decrypted_tokens = [reverse_dict.get(token, token) for token in tokens]
-    return ' '.join(decrypted_tokens)
+    return ''.join(decrypted_tokens)
 
 def save_library(library, library_filename):
     """
-    Сохраняет библиотеку слов в файл.
+    Сохраняет библиотеку слов в файл в формате JSON.
 
     :param library: Словарь с библиотекой слов.
     :param library_filename: Имя файла для сохранения библиотеки.
     """
     try:
-        with open(library_filename, 'a', encoding='utf-8') as file:
-            for word, code in library.items():
-                file.write(f"{word}:{code}\n")
+        with open(library_filename, 'w', encoding='utf-8') as file:
+            json.dump(library, file, ensure_ascii=False, indent=4)
     except IOError as e:
         print(f"Ошибка при записи в файл библиотеки '{library_filename}': {e}")
 
 def load_library(library_filename):
     """
-    Загружает библиотеку слов из файла.
+    Загружает библиотеку слов из файла в формате JSON.
 
     :param library_filename: Имя файла библиотеки.
     :return: Словарь с библиотекой слов.
@@ -198,13 +175,11 @@ def load_library(library_filename):
     library = {}
     try:
         with open(library_filename, 'r', encoding='utf-8') as file:
-            for line in file:
-                if ':' in line:
-                    word, code = line.strip().split(':', 1)
-                    if word not in library and code not in library.values():
-                        library[word] = code
+            library = json.load(file)
     except FileNotFoundError:
-        print(f"Файл библиотеки '{library_filename}' не найден.")
+        print(f"Файл библиотеки '{library_filename}' не найден. Создан новый файл.")
+        with open(library_filename, 'w', encoding='utf-8') as file:
+            json.dump(library, file, ensure_ascii=False, indent=4)
     except IOError as e:
         print(f"Ошибка при чтении файла библиотеки '{library_filename}': {e}")
     return library
@@ -232,11 +207,11 @@ def main():
         tokens = split_into_words(sanitized_text)
 
         # Загрузка существующей библиотеки
-        library_filename = 'library.txt'
+        library_filename = 'library.json'
         library = load_library(library_filename)
 
         # Создание словаря новых слов и обновление библиотеки
-        new_word_dict, library = create_word_dictionary(tokens)
+        new_word_dict, reverse_dict = create_word_dictionary(tokens)
 
         # Зашифровывание текста
         encrypted_text = encrypt_text(sanitized_text, new_word_dict)
@@ -260,7 +235,7 @@ def main():
             return
 
         # Загрузка существующей библиотеки
-        library_filename = 'library.txt'
+        library_filename = 'library.json'
         library = load_library(library_filename)
 
         # Создание обратного словаря для декодирования
