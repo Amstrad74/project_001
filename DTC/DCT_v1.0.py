@@ -54,53 +54,44 @@ def save_file(filename, content, encoding='utf-8'):
 
 def split_into_words(text):
     """
-    Разбивает текст на слова и знаки препинания.
-
-    :param text: Строка с текстом.
-    :return: Список слов и знаков препинания.
-    """
-    # Используем регулярное выражение для разделения текста на слова и знаки препинания
-    tokens = re.findall(r'\w+|[^\w\s]', text, re.UNICODE)
-    return tokens
-
-def sanitize_text(text):
-    """
-    Очищает текст, заменяя тире на '-', сохраняя все кириллические символы и знаки препинания.
+    Разделяет текст на слова и разделительные символы.
 
     :param text: Исходный текст.
-    :return: Очищенный текст.
+    :return: Список слов и разделительных символов.
     """
-    # Заменяем все виды тире на '-'
-    text = text.replace('—', '-').replace('–', '-').replace('—', '-')
+    # Шаблон для поиска слов и разделителей
+    pattern = r'(\w+|[^\w\s]+|\s+)'
+    return re.findall(pattern, text)
 
-    return text
-
-def create_word_dictionary(words):
+def create_word_dictionary(words, library):
     """
-    Создает словарь слов с частотой и уникальным кодом.
+    Создает словарь слов с частотой и уникальным кодом, используя существующую библиотеку.
 
     :param words: Список слов.
-    :return: Словарь с кодами слов и обратный словарь для декодирования.
+    :param library: Существующая библиотека слов с кодами.
+    :return: Словарь с новыми словами и их кодами, обновленная библиотека.
     """
     # Подсчитываем частоту слов
     frequency = {}
     for word in words:
         frequency[word] = frequency.get(word, 0) + 1
 
-    # Сортируем слова по частоте (по убыванию) и по длине (по убыванию)
-    sorted_words = sorted(frequency.items(), key=lambda x: (-x[1], -len(x[0])))
+    # Отфильтровываем слова, которые уже есть в библиотеке
+    new_words = {word: freq for word, freq in frequency.items() if word not in library}
 
-    # Генерируем уникальные коды
-    codes = generate_codes(len(sorted_words))
+    # Сортируем новые слова по частоте (по убыванию) и по длине (по убыванию)
+    sorted_new_words = sorted(new_words.items(), key=lambda x: (-x[1], -len(x[0])))
 
-    # Создаем словарь с кодами и обратный словарь для декодирования
-    word_dict = {}
-    reverse_dict = {}
-    for i, (word, freq) in enumerate(sorted_words):
-        word_dict[word] = codes[i]
-        reverse_dict[codes[i]] = word
+    # Генерируем уникальные коды для новых слов
+    new_codes = generate_codes(len(sorted_new_words))
 
-    return word_dict, reverse_dict
+    # Создаем словарь с новыми кодами
+    new_word_dict = {}
+    for i, (word, freq) in enumerate(sorted_new_words):
+        new_word_dict[word] = new_codes[i]
+        library[word] = new_codes[i]  # Добавляем в библиотеку
+
+    return new_word_dict, library
 
 def generate_codes(count):
     """
@@ -126,22 +117,6 @@ def generate_codes(count):
 
     return list(codes)
 
-
-import re
-
-
-def split_into_words(text):
-    """
-    Разделяет текст на слова и разделители.
-
-    :param text: Исходный текст.
-    :return: Список слов и разделителей.
-    """
-    # Шаблон для поиска слов и разделителей
-    pattern = r'(\w+|[^\w\s]+|\s+)'
-    return re.findall(pattern, text)
-
-
 def encrypt_text(text, word_dict):
     """
     Зашифровывает текст, используя словарь слов.
@@ -152,16 +127,12 @@ def encrypt_text(text, word_dict):
     """
     tokens = split_into_words(text)
     encrypted_tokens = []
-
     for token in tokens:
-        if token.strip() in word_dict:  # Убираем пробелы перед проверкой
-            encrypted_tokens.append(word_dict[token.strip()])
+        if re.match(r'\w+', token):
+            encrypted_tokens.append(word_dict.get(token, token))
         else:
             encrypted_tokens.append(token)
-
-    # Используем join без пробела, чтобы сохранить разделители
-    return ''.join(encrypted_tokens)
-
+    return ' '.join(encrypted_tokens)
 
 def decrypt_text(encrypted_text, reverse_dict):
     """
@@ -171,51 +142,14 @@ def decrypt_text(encrypted_text, reverse_dict):
     :param reverse_dict: Обратный словарь для декодирования.
     :return: Исходный текст.
     """
-    tokens = split_into_words(encrypted_text)
+    tokens = encrypted_text.split()
     decrypted_tokens = []
-
     for token in tokens:
-        if token.strip() in reverse_dict:  # Убираем пробелы перед проверкой
-            decrypted_tokens.append(reverse_dict[token.strip()])
+        if token in reverse_dict:
+            decrypted_tokens.append(reverse_dict[token])
         else:
             decrypted_tokens.append(token)
-
-    # Используем join без пробела, чтобы сохранить разделители
     return ''.join(decrypted_tokens)
-
-# def encrypt_text(text, word_dict):
-#     """
-#     Зашифровывает текст, используя словарь слов.
-#
-#     :param text: Исходный текст.
-#     :param word_dict: Словарь с кодами слов.
-#     :return: Зашифрованная строка.
-#     """
-#     tokens = split_into_words(text)
-#     encrypted_tokens = []
-#     for token in tokens:
-#         if token in word_dict:
-#             encrypted_tokens.append(word_dict[token])
-#         else:
-#             encrypted_tokens.append(token)
-#     return ' '.join(encrypted_tokens)
-#
-# def decrypt_text(encrypted_text, reverse_dict):
-#     """
-#     Расшифровывает текст, используя обратный словарь.
-#
-#     :param encrypted_text: Зашифрованная строка.
-#     :param reverse_dict: Обратный словарь для декодирования.
-#     :return: Исходный текст.
-#     """
-#     tokens = encrypted_text.split()
-#     decrypted_tokens = []
-#     for token in tokens:
-#         if token in reverse_dict:
-#             decrypted_tokens.append(reverse_dict[token])
-#         else:
-#             decrypted_tokens.append(token)
-#     return ' '.join(decrypted_tokens)
 
 def save_library(library, library_filename):
     """
@@ -265,21 +199,18 @@ def main():
         if not file_line:
             return
 
-        # Очистка текста
-        sanitized_text = sanitize_text(file_line)
-
-        # Разбиение строки на слова и знаки препинания
-        tokens = split_into_words(sanitized_text)
+        # Разделение текста на токены
+        tokens = split_into_words(file_line)
 
         # Загрузка существующей библиотеки
         library_filename = 'library.json'
         library = load_library(library_filename)
 
         # Создание словаря новых слов и обновление библиотеки
-        new_word_dict, reverse_dict = create_word_dictionary(tokens)
+        new_word_dict, reverse_dict = create_word_dictionary(tokens, library)
 
         # Зашифровывание текста
-        encrypted_text = encrypt_text(sanitized_text, new_word_dict)
+        encrypted_text = encrypt_text(file_line, new_word_dict)
 
         # Ввод имени выходного файла
         output_filename = input("Введите имя выходного файла (с расширением .dtc): ")
