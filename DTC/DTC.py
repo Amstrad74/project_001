@@ -21,15 +21,15 @@ def main():
         input_filename = input("Введите имя текстового файла: ")
 
         # Загрузка файла в строку
-        file_line = load_file(input_filename, encoding='utf-8')  # Исправлено на 'utf-8'
+        file_line = encript_dtc.load_file(input_filename, encoding='utf-8')  # Исправлено на 'encript_dtc.load_file'
         if not file_line:
             return
 
         # Очистка текста
         sanitized_text = encript_dtc.sanitize_text(file_line)
 
-        # Разделение текста на токены
-        tokens = encript_dtc.split_into_words(sanitized_text)
+        # Разбиение текста на токены
+        tokens = enict_dtc.split_into_words(sanitized_text)
 
         # Загрузка существующей библиотеки
         library_filename = 'library.json'
@@ -45,7 +45,7 @@ def main():
         output_filename = input("Введите имя выходного файла (с расширением .dtc): ")
 
         # Сохранение зашифрованного текста в файл
-        save_file(output_filename, encrypted_text, encoding='utf-8')
+        encript_dtc.save_file(output_filename, encrypted_text, encoding='utf-8')
 
         # Сохранение обновленной библиотеки
         encript_dtc.save_library(new_word_dict, library_filename)
@@ -55,7 +55,7 @@ def main():
         input_filename = input("Введите имя архивного файла (с расширением .dtc): ")
 
         # Загрузка файла в строку
-        file_line = load_file(input_filename, encoding='utf-8')
+        file_line = encript_dtc.load_file(input_filename, encoding='utf-8')  # Исправлено на 'encript_dtc.load_file'
         if not file_line:
             return
 
@@ -73,7 +73,7 @@ def main():
         output_filename = input("Введите имя выходного файла: ")
 
         # Сохранение расшифрованного текста в файл
-        save_file(output_filename, decrypted_text, encoding='utf-8')
+        encript_dtc.save_file(output_filename, decrypted_text, encoding='utf-8')  # Исправлено на 'encript_dtc.save_file'
 
     else:
         print("Неверный выбор. Пожалуйста, выберите 1 для запаковки или 2 для расшифровки.")
