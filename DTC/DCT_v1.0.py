@@ -135,7 +135,12 @@ def encrypt_text(text, word_dict):
     :return: Зашифрованная строка.
     """
     tokens = split_into_words(text)
-    encrypted_tokens = [word_dict.get(token, token) for token in tokens]
+    encrypted_tokens = []
+    for token in tokens:
+        if token in word_dict:
+            encrypted_tokens.append(word_dict[token])
+        else:
+            encrypted_tokens.append(token)
     return ' '.join(encrypted_tokens)
 
 def decrypt_text(encrypted_text, reverse_dict):
@@ -147,8 +152,13 @@ def decrypt_text(encrypted_text, reverse_dict):
     :return: Исходный текст.
     """
     tokens = encrypted_text.split()
-    decrypted_tokens = [reverse_dict.get(token, token) for token in tokens]
-    return ''.join(decrypted_tokens)
+    decrypted_tokens = []
+    for token in tokens:
+        if token in reverse_dict:
+            decrypted_tokens.append(reverse_dict[token])
+        else:
+            decrypted_tokens.append(token)
+    return ' '.join(decrypted_tokens)
 
 def save_library(library, library_filename):
     """
@@ -168,7 +178,7 @@ def load_library(library_filename):
     Загружает библиотеку слов из файла в формате JSON.
 
     :param library_filename: Имя файла библиотеки.
-    - :return: Словарь с библиотекой слов.
+    :return: Словарь с библиотекой слов.
     """
     library = {}
     try:
