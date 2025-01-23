@@ -2,7 +2,7 @@ import string
 import re
 import json
 from itertools import product
-from decript_dtc import load_library
+
 
 def split_into_words(text):
     """
@@ -95,3 +95,20 @@ def save_library(library, library_filename):
             json.dump(library, file, ensure_ascii=False, indent=4)
     except IOError as e:
         print(f"Ошибка при записи в файл библиотеки '{library_filename}': {e}")
+
+def load_library(library_filename):
+    """
+    Загружает библиотеку слов из файла в формате JSON.
+
+    :param library_filename: Имя файла библиотеки.
+    :return: Словарь с библиотекой слов.
+    """
+    library = {}
+    try:
+        with open(library_filename, 'r', encoding='utf-8') as file:
+            library = json.load(file)
+    except FileNotFoundError:
+        print(f"Файл библиотеки '{library_filename}' не найден.")
+    except IOError as e:
+        print(f"Ошибка при чтении файла библиотеки '{library_filename}': {e}")
+    return library
