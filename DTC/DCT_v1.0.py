@@ -1,6 +1,4 @@
 import string
-import random
-import os
 import re
 import json
 from itertools import product
@@ -170,7 +168,7 @@ def load_library(library_filename):
     Загружает библиотеку слов из файла в формате JSON.
 
     :param library_filename: Имя файла библиотеки.
-    :return: Словарь с библиотекой слов.
+    - :return: Словарь с библиотекой слов.
     """
     library = {}
     try:
@@ -188,7 +186,7 @@ def main():
     # Запрос режима работы
     print("Выберите режим работы:")
     print("1. Запаковать")
-    print("2. Распаковать")
+    print("2. Расшифровать")
     choice = input("Введите 1 или 2: ").strip()
 
     if choice == '1':
@@ -226,7 +224,7 @@ def main():
         save_library(new_word_dict, library_filename)
 
     elif choice == '2':
-        # Режим распаковки
+        # Режим расшифровки
         input_filename = input("Введите имя архивного файла (с расширением .dtc): ")
 
         # Загрузка файла в строку
@@ -251,7 +249,7 @@ def main():
         save_file(output_filename, decrypted_text, encoding='utf-8')
 
     else:
-        print("Неверный выбор. Пожалуйста, выберите 1 для запаковки или 2 для распаковки.")
+        print("Неверный выбор. Пожалуйста, выберите 1 для запаковки или 2 для расшифровки.")
 
 if __name__ == "__main__":
     main()
