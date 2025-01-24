@@ -1,5 +1,6 @@
 import string  # Импорт модуля string
 import re
+import os
 
 def load_file(filename, encoding='utf-8'):
     """
@@ -81,7 +82,32 @@ def save_library(sorted_words, filename):
     except IOError as e:
         print(f"Ошибка при записи в файл '{filename}': {e}")
 
+def read_txt_files_from_folder(folder_path):
+    """
+    Читает все файлы .txt из указанной папки и объединяет их содержимое в одну строку.
+
+    :param folder_path: Путь к папке с файлами .txt.
+    :return: Объединенная строка содержимого всех файлов.
+    """
+    combined_text = ""
+    for filename in os.listdir(folder_path):
+        if filename.endswith(".txt"):
+            file_path = os.path.join(folder_path, filename)
+            text = load_file(file_path, encoding='utf-8')
+            combined_text += text + "\n"
+    return combined_text
+
 def main():
+    # Путь к папке с txt файлами
+    txt_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'txt')
+
+    # Читаем все txt файлы и объединяем их содержимое
+    combined_text = read_txt_files_from_folder(txt_folder)
+
+    # Сохраняем объединенный текст в файл source_lib.txt
+    with open('source_lib.txt', 'w', encoding='utf-8') as file:
+        file.write(combined_text)
+
     # Загрузка текста из файла
     text = load_file('source_lib.txt', encoding='utf-8')
     if not text:
