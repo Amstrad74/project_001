@@ -63,6 +63,27 @@ def split_into_words(text):
     pattern = r'(\w+|[^\w\s]+|\s+)'
     return re.findall(pattern, text)
 
+
+def check_symbols(tokens):
+    """
+    Проверяет, является ли токен запрещённым символом.
+
+    :param tokens: Список токенов (слов и символов).
+    :return: Список кортежей (слово, сигнал).
+             Сигнал = 1, если слово не является запрещённым символом.
+             Сигнал = 0, если слово является запрещённым символом.
+    """
+    # Запрещённые символы
+    forbidden_symbols = {',', '!', '.', '-', '–', " "}
+    result = []
+    for token in tokens:
+        if token in forbidden_symbols:
+            result.append((token, 0))  # Сигнал 2 для запрещённых символов
+        else:
+            result.append((token, 1))  # Сигнал 1 для остальных токенов
+    return result
+
+
 def sanitize_text(text):
     """
     Очищает текст, сохраняя все кириллические символы, знаки препинания и специальные символы.

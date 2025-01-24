@@ -21,10 +21,10 @@ def main():
         input_filename = input("Введите имя текстового файла: ")
 
         # Загрузка файла в строку
-        file_line = encript_dtc.load_file(input_filename, encoding='utf-8')  # Исправлено на 'encript_dtc.load_file'
+        file_line = encript_dtc.load_file(input_filename, encoding='utf-8')
         if not file_line:
             return
-
+        print(file_line)
         # Очистка текста
         sanitized_text = encript_dtc.sanitize_text(file_line)
 
