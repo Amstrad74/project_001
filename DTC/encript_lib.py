@@ -52,7 +52,7 @@ def generate_hex_codes(count):
     :return: Список шестнадцатеричных кодов.
     """
     codes = []
-    current = 0  # Начинаем с нулевого кода
+    current = 1  # Начинаем с нулевого кода
 
     while len(codes) < count:
         # Преобразуем текущий код в байты
