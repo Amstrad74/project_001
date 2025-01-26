@@ -43,8 +43,8 @@ def sanitize_text(text):
     # Определяем допустимые символы: латинские и кириллические буквы
     allowed_chars = string.ascii_letters + "".join([chr(i) for i in range(ord('А'), ord('я')+1)])  # Добавлены кириллические символы
 
-    # Заменяем недопустимые символы на пробел
-    sanitized_text = ''.join([char if char in allowed_chars else ' ' for char in text])
+    # Используем генератор для обработки текста
+    sanitized_text = ''.join(char if char in allowed_chars else ' ' for char in text)
 
     return sanitized_text
 
@@ -89,13 +89,13 @@ def read_txt_files_from_folder(folder_path):
     :param folder_path: Путь к папке с файлами .txt.
     :return: Объединенная строка содержимого всех файлов.
     """
-    combined_text = ""
+    combined_text = []
     for filename in os.listdir(folder_path):
         if filename.endswith(".txt"):
             file_path = os.path.join(folder_path, filename)
             text = load_file(file_path, encoding='utf-8')
-            combined_text += text + "\n"
-    return combined_text
+            combined_text.append(text + "\n")
+    return ''.join(combined_text)
 
 def main():
     # Путь к папке с txt файлами
@@ -126,40 +126,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-'''
-Пояснения:
-
-    1.
-    Функция read_txt_files_from_folder:
-        Читает все файлы .txt из указанной папки и объединяет их содержимое в одну строку.
-        Функция проверяет каждый файл на соответствие расширению .txt и добавляет его содержимое к общей строке.
-    2.
-    Обновленная функция main:
-        Сначала читает все файлы из папки txt и объединяет их в файл source_lib.txt.
-        Затем продолжает работу как и раньше: загружает текст из source_lib.txt, очищает его и создает 
-        словарь-библиотеку.
-    3.
-    Использование модуля os:
-        Модуль os используется для работы с файловой системой, чтобы найти все файлы .txt в папке txt.
-    4.
-    Проверка кодировки и переконвертация:
-        Функция load_file уже обрабатывает ошибки декодирования и пытается переконвертировать файлы из 
-        кодировки cp1251 в utf-8, если это необходимо.
-
-Запуск программы:
-
-    1.Убедитесь, что папка txt находится в той же директории, что и программа create_lib.py.
-    2.
-    Запустите программу с помощью команды:
-
-    bash
-
-    python create_lib.py
-
-    3.Программа прочитает все файлы .txt из папки txt, объединит их в файл source_lib.txt, а затем создаст 
-    словарь-библиотеку и сохранит его в файл word_lib.txt.
-
-Теперь программа автоматически обрабатывает все текстовые файлы в папке txt, проверяет их кодировку и объединяет 
-их в один файл перед созданием словаря-библиотеки.
-
-'''
