@@ -1,7 +1,6 @@
 import string
-import re
 import json
-from itertools import product
+import os
 
 def load_file(filename, encoding='utf-8'):
     """
@@ -15,9 +14,7 @@ def load_file(filename, encoding='utf-8'):
         with open(filename, 'r', encoding=encoding) as file:
             return file.read()
     except FileNotFoundError:
-        print(f"Файл '{filename}' не найден. Создан новый файл.")
-        with open(filename, 'w', encoding=encoding) as file:
-            pass
+        print(f"Файл '{filename}' не найден.")
         return ""
     except UnicodeDecodeError:
         print(f"Ошибка декодирования файла '{filename}' с кодировкой '{encoding}'. Попытка с другой кодировкой.")
@@ -25,9 +22,6 @@ def load_file(filename, encoding='utf-8'):
             try:
                 with open(filename, 'r', encoding='cp1251') as file:
                     content = file.read()
-                # Сохраняем файл в 'utf-8'
-                with open(filename, 'w', encoding='utf-8') as file_utf8:
-                    file_utf8.write(content)
                 return content
             except Exception as e:
                 print(f"Не удалось прочитать файл '{filename}': {e}")
@@ -52,6 +46,17 @@ def save_file(filename, content, encoding='utf-8'):
     except IOError as e:
         print(f"Ошибка при записи в файл '{filename}': {e}")
 
+def sanitize_text(text):
+    """
+    Очищает текст, сохраняя все кириллические и латинские символы, а также знаки препинания.
+
+    :param text: Исходный текст.
+    :return: Очищенный текст.
+    """
+    allowed_chars = string.ascii_letters + "".join([chr(i) for i in range(ord('А'), ord('я')+1)]) + string.punctuation + " " + "\n" + "\r"
+    sanitized_text = ''.join([char if char in allowed_chars else ' ' for char in text])
+    return sanitized_text
+
 def split_into_words(text):
     """
     Разделяет текст на слова и разделительные символы.
@@ -59,56 +64,8 @@ def split_into_words(text):
     :param text: Исходный текст.
     :return: Список слов и разделительных символов.
     """
-    # Шаблон для поиска слов и разделителей
     pattern = r'(\w+|[^\w\s]+|\s+)'
     return re.findall(pattern, text)
-
-
-def check_symbols(tokens):
-    """
-    Проверяет, является ли токен запрещённым символом.
-
-    :param tokens: Список токенов (слов и символов).
-    :return: Список кортежей (слово, сигнал).
-             Сигнал = 1, если слово не является запрещённым символом.
-             Сигнал = 0, если слово является запрещённым символом.
-    """
-    # Запрещённые символы
-    forbidden_symbols = {',', '!', '.', '-', '–', " "}
-    result = []
-    for token in tokens:
-        if token in forbidden_symbols:
-            result.append((token, 0))  # Сигнал 2 для запрещённых символов
-        else:
-            result.append((token, 1))  # Сигнал 1 для остальных токенов
-    return result
-
-
-def sanitize_text(text):
-    """
-    Очищает текст, сохраняя все кириллические символы, знаки препинания и специальные символы.
-
-    :param text: Исходный текст.
-    :return: Очищенный текст.
-    """
-    # Определяем допустимые символы:
-    # - Латинские буквы в верхнем и нижнем регистре
-    # - Кириллические буквы в верхнем и нижнем регистре
-    # - Цифры
-    # - Знаки препинания
-    # - Специальные символы, включая символы ввода и переноса строки
-    allowed_chars = string.ascii_letters + \
-                   "".join([chr(i) for i in range(ord('А'), ord('я')+1)]) + \
-                   string.digits + \
-                   string.punctuation + \
-                   " " + \
-                   "\n" + \
-                   "\r"
-
-    # Заменяем недопустимые символы на пробел
-    sanitized_text = ''.join([char if char in allowed_chars else ' ' for char in text])
-
-    return sanitized_text
 
 def create_word_dictionary(words):
     """
@@ -117,18 +74,14 @@ def create_word_dictionary(words):
     :param words: Список слов.
     :return: Словарь с кодами слов и обратный словарь для декодирования.
     """
-    # Подсчитываем частоту слов
     frequency = {}
     for word in words:
         frequency[word] = frequency.get(word, 0) + 1
 
-    # Сортируем слова по частоте (по убыванию) и по длине (по убыванию)
     sorted_words = sorted(frequency.items(), key=lambda x: (-x[1], -len(x[0])))
 
-    # Генерируем уникальные коды
     codes = generate_codes(len(sorted_words))
 
-    # Создаем словарь с кодами и обратный словарь для декодирования
     word_dict = {}
     reverse_dict = {}
     for i, (word, freq) in enumerate(sorted_words):
@@ -147,7 +100,7 @@ def generate_codes(count):
     codes = set()
     current_length = 1
     while len(codes) < count:
-        if current_length > 3:
+        if current_length > 4:
             current_length += 1
             continue
         alphabet = string.ascii_letters + string.digits
@@ -173,18 +126,18 @@ def encrypt_text(text, word_dict):
     encrypted_tokens = [word_dict.get(token.strip(), token) for token in tokens]
     return ' '.join(encrypted_tokens)
 
-def save_library(library, library_filename):
+def encrypt_file(input_filename, output_filename, library_filename):
     """
-    Сохраняет библиотеку слов в файл в формате JSON.
+    Шифрует файл, используя библиотеку слов.
 
-    :param library: Словарь с библиотекой слов.
-    :param library_filename: Имя файла для сохранения библиотеки.
+    :param input_filename: Имя входного файла.
+    :param output_filename: Имя выходного файла.
+    :param library_filename: Имя файла библиотеки.
     """
-    try:
-        with open(library_filename, 'w', encoding='utf-8') as file:
-            json.dump(library, file, ensure_ascii=False, indent=4)
-    except IOError as e:
-        print(f"Ошибка при записи в файл библиотеки '{library_filename}': {e}")
+    library = load_library(library_filename)
+    text = load_file(input_filename)
+    encrypted_text = encrypt_text(text, library)
+    save_file(output_filename, encrypted_text)
 
 def load_library(library_filename):
     """
