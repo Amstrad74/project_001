@@ -2,122 +2,83 @@ import string  # Импорт модуля string
 import re
 import os
 
-def load_file(filename, encoding='utf-8'):
-    """
-    Загружает содержимое текстового файла в строку с учетом кодировки.
-
-    :param filename: Имя текстового файла.
-    :param encoding: Кодировка файла (по умолчанию 'utf-8').
-    :return: Строка с содержимым файла.
-    """
-    try:
-        with open(filename, 'r', encoding=encoding) as file:
-            return file.read()
-    except FileNotFoundError:
-        print(f"Файл '{filename}' не найден.")
-        return ""
-    except UnicodeDecodeError:
-        print(f"Ошибка декодирования файла '{filename}' с кодировкой '{encoding}'. Попытка с другой кодировкой.")
-        if encoding == 'utf-8':
-            try:
-                with open(filename, 'r', encoding='cp1251') as file:
-                    content = file.read()
-                return content
-            except Exception as e:
-                print(f"Не удалось прочитать файл '{filename}': {e}")
-                return ""
-        else:
-            return ""
-    except IOError as e:
-        print(f"Ошибка при чтении файла '{filename}': {e}")
-        return ""
-
-def sanitize_text(text):
+def sanitize_text(chunk, allowed_chars):
     """
     Очищает текст, удаляя специальные символы, пробелы, знаки переноса строки и цифры.
     Сохраняет только буквы (латинские и кириллические).
 
-    :param text: Исходный текст.
+    :param chunk: Часть текста для обработки.
+    :param allowed_chars: Строка с допустимыми символами.
     :return: Очищенный текст.
     """
-    # Определяем допустимые символы: латинские и кириллические буквы
-    allowed_chars = string.ascii_letters + "".join([chr(i) for i in range(ord('А'), ord('я')+1)])  # Добавлены кириллические символы
-
     # Используем генератор для обработки текста
-    sanitized_text = ''.join(char if char in allowed_chars else ' ' for char in text)
+    sanitized_chunk = ''.join(char if char in allowed_chars else ' ' for char in chunk)
+    return sanitized_chunk
 
-    return sanitized_text
-
-def create_word_dictionary(text):
+def process_file_in_chunks(file_path, chunk_size=1024*1024):
     """
-    Создает словарь слов с частотой.
+    Читает файл по частям и обрабатывает каждую часть.
 
-    :param text: Текст для обработки.
+    :param file_path: Путь к файлу.
+    :param chunk_size: Размер каждой части в байтах.
+    :return: Генератор, возвращающий обработанные части текста.
+    """
+    allowed_chars = string.ascii_letters + "".join([chr(i) for i in range(ord('А'), ord('я')+1)])  # Добавлены кириллические символы
+    with open(file_path, 'r', encoding='utf-8') as file:
+        while True:
+            chunk = file.read(chunk_size)
+            if not chunk:
+                break
+            sanitized_chunk = sanitize_text(chunk, allowed_chars)
+            yield sanitized_chunk
+
+def count_words_in_chunks(chunks):
+    """
+    Подсчитывает частоту слов в обработанных частях текста.
+
+    :param chunks: Генератор, возвращающий обработанные части текста.
+    :return: Словарь с частотой слов.
+    """
+    frequency = {}
+    for chunk in chunks:
+        words = chunk.split()
+        for word in words:
+            frequency[word] = frequency.get(word, 0) + 1
+    return frequency
+
+def sort_words(frequency):
+    """
+    Сортирует слова по частоте и длине.
+
+    :param frequency: Словарь с частотой слов.
     :return: Список отсортированных слов.
     """
-    # Разделяем текст на слова
-    words = text.split()
-
-    # Подсчитываем частоту слов
-    frequency = {}
-    for word in words:
-        frequency[word] = frequency.get(word, 0) + 1
-
-    # Сортируем слова по частоте (по убыванию) и по длине (по убыванию)
     sorted_words = sorted(frequency.items(), key=lambda x: (-x[1], -len(x[0])))
-
     return sorted_words
 
 def save_library(sorted_words, filename):
     """
-    Сохраняет отсортированный список слов в файл, разделяя их символом переноса строки.
+    Сохраняет отсортированный список слов в файл.
 
     :param sorted_words: Список отсортированных слов.
     :param filename: Имя файла для сохранения.
     """
-    try:
-        with open(filename, 'w', encoding='utf-8') as file:
-            for word, freq in sorted_words:
-                file.write(f"{word}\n")
-    except IOError as e:
-        print(f"Ошибка при записи в файл '{filename}': {e}")
-
-def read_txt_files_from_folder(folder_path):
-    """
-    Читает все файлы .txt из указанной папки и объединяет их содержимое в одну строку.
-
-    :param folder_path: Путь к папке с файлами .txt.
-    :return: Объединенная строка содержимого всех файлов.
-    """
-    combined_text = []
-    for filename in os.listdir(folder_path):
-        if filename.endswith(".txt"):
-            file_path = os.path.join(folder_path, filename)
-            text = load_file(file_path, encoding='utf-8')
-            combined_text.append(text + "\n")
-    return ''.join(combined_text)
+    with open(filename, 'w', encoding='utf-8') as file:
+        for word, freq in sorted_words:
+            file.write(f"{word}\n")
 
 def main():
-    # Путь к папке с txt файлами
-    txt_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'txt')
+    # Путь к исходному файлу
+    source_file = 'source_lib.txt'
 
-    # Читаем все txt файлы и объединяем их содержимое
-    combined_text = read_txt_files_from_folder(txt_folder)
+    # Обработка файла по частям
+    chunks = process_file_in_chunks(source_file)
 
-    # Сохраняем объединенный текст в файл source_lib.txt
-    with open('source_lib.txt', 'w', encoding='utf-8') as file:
-        file.write(combined_text)
+    # Подсчет частоты слов
+    frequency = count_words_in_chunks(chunks)
 
-    # Загрузка текста из файла
-    text = load_file('source_lib.txt', encoding='utf-8')
-    if not text:
-        return
-
-    # Очистка текста
-    sanitized_text = sanitize_text(text)
-
-    # Создание словаря слов
-    sorted_words = create_word_dictionary(sanitized_text)
+    # Сортировка слов
+    sorted_words = sort_words(frequency)
 
     # Сохранение библиотеки в файл
     save_library(sorted_words, 'word_lib.txt')
