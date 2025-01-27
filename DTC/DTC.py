@@ -46,16 +46,6 @@ def save_file(filename, content, encoding='utf-8'):
     except IOError as e:
         print(f"Ошибка при записи в файл '{filename}': {e}")
 
-def sanitize_text(text):
-    """
-    Очищает текст, сохраняя все кириллические и латинские символы, а также знаки препинания.
-
-    :param text: Исходный текст.
-    :return: Очищенный текст.
-    """
-    allowed_chars = string.ascii_letters + "".join([chr(i) for i in range(ord('А'), ord('я')+1)]) + string.punctuation + " " + "\n" + "\r"
-    return ''.join([char if char in allowed_chars else ' ' for char in text])
-
 def split_into_words(text):
     """
     Разделяет текст на слова и разделительные символы.
@@ -195,7 +185,7 @@ def encrypt_text(text, word_dict):
     :param word_dict: Словарь с кодами слов.
     :return: Зашифрованная строка.
     """
-    tokens = split_into_words(sanitize_text(text))
+    tokens = split_into_words(text)
     encrypted_tokens = [word_dict.get(token.strip(), token) for token in tokens]
     return ' '.join(encrypted_tokens)
 
