@@ -128,7 +128,7 @@ def decrypt_file(input_dtc_path, output_path, dict_path):
 
 
 if __name__ == "__main__":
-    input_filename = 'test_file.txt'
+    input_filename = 'Призрак.txt'
     base_name = os.path.splitext(input_filename)[0]
 
     encrypt_file(
