@@ -2,22 +2,20 @@ import os
 import re
 from collections import defaultdict
 
-# Добавляем 0x09 (табуляцию) в список запрещенных байтов
+# Обновленный список запрещенных байтов (добавлен 0xC2)
 FORBIDDEN_BYTES = {
-    0x00, 0x09, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29,
-    0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E,
-    0x3F, 0x40, 0x5B, 0x5C, 0x5D, 0x5E, 0x5F, 0x60, 0x7B, 0x7C, 0x7D,
+    0x00, 0x09, 0x20, 0xA0, 0xC2, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
+    0x28, 0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x3A, 0x3B, 0x3C, 0x3D,
+    0x3E, 0x3F, 0x40, 0x5B, 0x5C, 0x5D, 0x5E, 0x5F, 0x60, 0x7B, 0x7C, 0x7D,
     0x7E, 0x0D, 0x0A
 }
 
 
 def get_words_and_separators(text):
-    # Уточняем регулярное выражение для лучшего разделения
     pattern = re.compile(
         r'([^\x00-\x20\x7F-\xA0]+)|([\x00-\x20\x7F-\xA0])',
         re.UNICODE
     )
-
     tokens = []
     for match in pattern.finditer(text):
         word, sep = match.groups()
@@ -31,8 +29,7 @@ def get_words_and_separators(text):
 def create_dictionary(tokens):
     word_counts = defaultdict(int)
     for token in tokens:
-        # Исключаем все разделители из подсчета слов
-        if len(token) > 1 or (len(token) == 1 and ord(token) not in FORBIDDEN_BYTES):
+        if len(token) > 1 or (len(token) == 1 and ord(token[0]) not in FORBIDDEN_BYTES):
             word_counts[token] += 1
 
     sorted_words = sorted(
@@ -45,11 +42,13 @@ def create_dictionary(tokens):
     current_key = 0x01
 
     for word, _ in sorted_words:
-        # Пропускаем запрещенные ключи и табуляцию
         while current_key in FORBIDDEN_BYTES or current_key in used_keys:
             current_key = (current_key + 1) % 0x100
             if current_key == 0x00:
                 current_key = 0x01
+
+        if current_key in FORBIDDEN_BYTES:
+            raise ValueError("Недостаточно свободных ключей")
 
         dictionary[word] = bytes([current_key])
         used_keys.add(current_key)
@@ -61,7 +60,8 @@ def create_dictionary(tokens):
 
 
 def encrypt_file(input_path, output_dtc_path, output_dict_path):
-    with open(input_path, 'r', encoding='utf-8', newline='') as f:
+    # Чтение с поддержкой BOM
+    with open(input_path, 'r', encoding='utf-8-sig') as f:
         text = f.read()
 
     tokens = get_words_and_separators(text)
@@ -72,11 +72,8 @@ def encrypt_file(input_path, output_dtc_path, output_dict_path):
         if token in dictionary:
             encrypted_data.extend(dictionary[token])
         else:
-            # Явно сохраняем табуляцию
-            if token == '\t':
-                encrypted_data.extend(b'\x09')
-            else:
-                encrypted_data.extend(token.encode('utf-8'))
+            # Сохраняем оригинальные байты
+            encrypted_data.extend(token.encode('utf-8'))
 
     os.makedirs(os.path.dirname(output_dtc_path), exist_ok=True)
     with open(output_dtc_path, 'wb') as f:
@@ -94,7 +91,10 @@ def decrypt_file(input_dtc_path, output_path, dict_path):
             parts = line.strip().split(' ', 1)
             if len(parts) == 2:
                 key_hex, word = parts
-                dictionary[bytes.fromhex(key_hex)] = word
+                try:
+                    dictionary[bytes.fromhex(key_hex)] = word
+                except ValueError:
+                    continue
 
     with open(input_dtc_path, 'rb') as f:
         encrypted_data = f.read()
@@ -107,16 +107,20 @@ def decrypt_file(input_dtc_path, output_path, dict_path):
             decrypted.append(dictionary[byte])
             i += 1
         else:
-            # Восстанавливаем табуляцию
-            if byte == b'\x09':
-                decrypted.append('\t')
+            # Декодируем как UTF-8
+            try:
+                char = encrypted_data[i:i + 1].decode('utf-8')
+                decrypted.append(char)
                 i += 1
-            else:
-                sep = bytearray()
-                while i < len(encrypted_data) and encrypted_data[i:i + 1] not in dictionary:
-                    sep.append(encrypted_data[i])
+            except UnicodeDecodeError:
+                # Обработка многобайтовых символов
+                try:
+                    char = encrypted_data[i:i + 2].decode('utf-8')
+                    decrypted.append(char)
+                    i += 2
+                except:
+                    decrypted.append('\uFFFD')  # Символ замены
                     i += 1
-                decrypted.append(sep.decode('utf-8'))
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w', encoding='utf-8', newline='') as f:
