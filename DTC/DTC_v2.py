@@ -2,7 +2,6 @@ import os
 import re
 from collections import defaultdict
 
-
 class TextEncryptorDecryptor:
     # Обновленный список запрещенных байтов (добавлен 0xC2)
     FORBIDDEN_BYTES = {
@@ -12,11 +11,62 @@ class TextEncryptorDecryptor:
         0x7E, 0x0D, 0x0A
     }
 
-    def __init__(self, input_filename):
+    def __init__(self, input_filename, input_folder='txt', output_dtc_folder='dtc', output_dict_folder='dtc', decrypt_folder='decrypt'):
         self.input_filename = input_filename
         self.base_name = os.path.splitext(input_filename)[0]
+        self.input_folder = input_folder
+        self.output_dtc_folder = output_dtc_folder
+        self.output_dict_folder = output_dict_folder
+        self.decrypt_folder = decrypt_folder
+
+    def is_forbidden_code(self, code):
+        """
+        Проверяет, является ли код запрещённым.
+
+        :param code: Целое число, представляющее код символа.
+        :return: True, если код запрещён, иначе False.
+        """
+        return code in self.FORBIDDEN_BYTES
+
+    def generate_hex_codes(self, count):
+        """
+        Генерирует список шестнадцатеричных кодов в порядке возрастания для заданного количества слов.
+
+        :param count: Количество слов.
+        :return: Список шестнадцатеричных кодов.
+        """
+        codes = []
+        current = 1  # Начинаем с кода 1
+
+        while len(codes) < count:
+            # Преобразуем текущий код в байты
+            byte_length = (current.bit_length() + 7) // 8  # Определяем необходимую длину в байтах
+            byte_list = current.to_bytes(byte_length, byteorder='big')
+            # Проверяем, что все байты не запрещены
+            if all(not self.is_forbidden_code(b) for b in byte_list):
+                hex_str = byte_list.hex()  # Преобразуем в шестнадцатеричную строку
+                codes.append(hex_str)
+                if len(codes) == count:
+                    break
+
+            # Увеличиваем текущий код на 1
+            current += 1
+            # Проверяем, не превысили ли мы максимальное значение для 4 байтов
+            if current.bit_length() > 32:
+                raise ValueError("Количество кодов слишком велико для генерации.")
+
+        if len(codes) < count:
+            raise ValueError("Недостаточно кодов для генерации заданного количества.")
+
+        return codes
 
     def get_words_and_separators(self, text):
+        """
+        Разбивает текст на слова и разделители.
+
+        :param text: Входной текст.
+        :return: Список токенов (слов и разделителей).
+        """
         pattern = re.compile(
             r'([^\x00-\x20\x7F-\xA0]+)|([\x00-\x20\x7F-\xA0])',
             re.UNICODE
@@ -31,6 +81,12 @@ class TextEncryptorDecryptor:
         return tokens
 
     def create_dictionary(self, tokens):
+        """
+        Создает словарь для шифрования.
+
+        :param tokens: Список токенов.
+        :return: Словарь, где ключи - слова, значения - байты.
+        """
         word_counts = defaultdict(int)
         for token in tokens:
             if len(token) > 1 or (len(token) == 1 and ord(token[0]) not in self.FORBIDDEN_BYTES):
@@ -39,26 +95,22 @@ class TextEncryptorDecryptor:
             word_counts.items(),
             key=lambda x: (-x[1], -len(x[0]), x[0])
         )
+        count = len(sorted_words)
+        codes = self.generate_hex_codes(count)
         dictionary = {}
-        used_keys = set()
-        current_key = 0x01
-        for word, _ in sorted_words:
-            while current_key in self.FORBIDDEN_BYTES or current_key in used_keys:
-                current_key = (current_key + 1) % 0x100
-                if current_key == 0x00:
-                    current_key = 0x01
-            if current_key in self.FORBIDDEN_BYTES:
-                raise ValueError("Недостаточно свободных ключей")
-            dictionary[word] = bytes([current_key])
-            used_keys.add(current_key)
-            current_key += 1
-            if current_key > 0xFF:
-                current_key = 0x01
+        for word, code_hex in zip(sorted_words, codes):
+            dictionary[word] = bytes.fromhex(code_hex)
         return dictionary
 
     def encrypt_file(self, output_dtc_path, output_dict_path):
+        """
+        Шифрует файл и создает словарь.
+
+        :param output_dtc_path: Путь к зашифрованному файлу.
+        :param output_dict_path: Путь к словарю.
+        """
         try:
-            with open(os.path.join('txt', self.input_filename), 'rb') as f:
+            with open(os.path.join(self.input_folder, self.input_filename), 'rb') as f:
                 text = f.read()
             tokens = self.get_words_and_separators(text.decode('utf-8'))
             dictionary = self.create_dictionary(tokens)
@@ -78,6 +130,13 @@ class TextEncryptorDecryptor:
             print(f"Ошибка при шифровании: {e}")
 
     def decrypt_file(self, input_dtc_path, output_path, dict_path):
+        """
+        Дешифрует файл с использованием словаря.
+
+        :param input_dtc_path: Путь к зашифрованному файлу.
+        :param output_path: Путь к дешифрованному файлу.
+        :param dict_path: Путь к словарю.
+        """
         try:
             print("Начало дешифрования...")
             dictionary = {}
@@ -102,6 +161,13 @@ class TextEncryptorDecryptor:
             decrypted = []
             i = 0
             while i < len(encrypted_data):
+                byte_chunk = encrypted_data[i:i + 4]
+                if len(byte_chunk) == 4:
+                    key = int.from_bytes(byte_chunk, byteorder='big')
+                    if key in dictionary:
+                        decrypted.append(dictionary[key])
+                        i += 4
+                        continue
                 byte = encrypted_data[i:i + 1]
                 if byte in dictionary:
                     decrypted.append(dictionary[byte])
@@ -127,17 +193,14 @@ class TextEncryptorDecryptor:
         except Exception as e:
             print(f"Ошибка при дешифровании: {e}")
 
-
 if __name__ == "__main__":
     input_filename = 'test_file1.txt'
     encryptor_decryptor = TextEncryptorDecryptor(input_filename)
-
     # Шифрование
     encryptor_decryptor.encrypt_file(
         os.path.join('dtc', encryptor_decryptor.base_name + '.dtc'),
         os.path.join('dtc', encryptor_decryptor.base_name + '.dtl')
     )
-
     # Дешифрование
     decrypt_path = os.path.join('decrypt', input_filename)
     dict_path = os.path.join('dtc', encryptor_decryptor.base_name + '.dtl')
