@@ -39,19 +39,18 @@ class TextEncryptorDecryptor:
                 yield bytes(combo)
             length += 1  # Увеличиваем длину ключа при исчерпании комбинаций
 
-    def get_words_and_separators(self, text):
+    def get_words_and_separators(self, data):
         """
-        Разделяет текст на слова и разделители.
-        :param text: Исходный текст
+        Разделяет данные на слова и разделители.
+        :param data: Исходные бинарные данные
         :return: list - список токенов (слов и разделителей)
         """
         # Регулярное выражение для разделения на слова и специальные символы
         pattern = re.compile(
-            r'([^\x00-\x20\x7F-\xA0]+)|([\x00-\x20\x7F-\xA0])',
-            re.UNICODE
+            br'([^\x00-\x20]+)|([\x00-\x20])'
         )
         tokens = []
-        for match in pattern.finditer(text):
+        for match in pattern.finditer(data):
             word, sep = match.groups()
             if word:
                 tokens.append(word)
@@ -68,7 +67,7 @@ class TextEncryptorDecryptor:
         word_counts = defaultdict(int)
         # Подсчет частоты слов (исключая разделители)
         for token in tokens:
-            if len(token) > 1 or (len(token) == 1 and ord(token[0]) not in self.FORBIDDEN_BYTES):
+            if len(token) > 1 or (len(token) == 1 and token[0] not in self.FORBIDDEN_BYTES):
                 word_counts[token] += 1
         # Сортировка слов по важности
         sorted_words = sorted(
@@ -101,33 +100,18 @@ class TextEncryptorDecryptor:
                 encoding = result['encoding']
                 logging.debug(f"Определена кодировка: {encoding}")
 
-            # Чтение файла с учетом обнаруженной кодировки
-            with open(os.path.join('txt', self.input_filename), 'r', encoding=encoding) as f:
-                text = f.read()
+            # Чтение файла в бинарном режиме
+            with open(os.path.join('txt', self.input_filename), 'rb') as f:
+                data = f.read()
 
-            # Конвертация текста в UTF-8
-            text_utf8 = text.encode('utf-8')
-
-            tokens = self.get_words_and_separators(text_utf8.decode('utf-8'))
+            tokens = self.get_words_and_separators(data)
             dictionary = self.create_dictionary(tokens)
             encrypted_data = bytearray()
             for token in tokens:
                 if token in dictionary:
                     encrypted_data.extend(dictionary[token])
                 else:
-                    # Кодирование специальных символов
-                    if token == '\t':
-                        encrypted_data.extend(b'\x09')
-                    elif token == '\n':
-                        encrypted_data.extend(b'\x0D\x0A')
-                    elif token == '\xa0':
-                        encrypted_data.extend(b'\xC2\xA0')
-                    else:
-                        encrypted_data.extend(token.encode('utf-8'))
-
-            # Добавление кодировки в конец зашифрованных данных
-            encoded_encoding = encoding.encode('utf-8')[:20].ljust(20, b'\x00')
-            encrypted_data.extend(encoded_encoding)
+                    encrypted_data.extend(token)
 
             # Сохранение зашифрованных данных
             os.makedirs(os.path.dirname(output_dtc_path), exist_ok=True)
@@ -137,7 +121,7 @@ class TextEncryptorDecryptor:
             # Сохранение словаря
             with open(output_dict_path, 'w', encoding='utf-8') as f:
                 for word, key in dictionary.items():
-                    f.write(f"{key.hex()} {word}\n")
+                    f.write(f"{key.hex()} {word.decode('utf-8')}\n")
 
         except Exception as e:
             print(f"Ошибка при шифровании: {str(e)}")
@@ -163,7 +147,7 @@ class TextEncryptorDecryptor:
                     key_hex, word = parts
                     try:
                         key = bytes.fromhex(key_hex)
-                        dictionary[key] = word
+                        dictionary[key] = word.encode('utf-8')
                     except ValueError:
                         continue
 
@@ -171,14 +155,8 @@ class TextEncryptorDecryptor:
             with open(input_dtc_path, 'rb') as f:
                 encrypted_data = f.read()
 
-            # Извлечение кодировки из последних 20 байт
-            encoded_encoding = encrypted_data[-20:]
-            encoding = encoded_encoding.rstrip(b'\x00').decode('utf-8')
-            logging.debug(f"Извлечена кодировка: {encoding}")
-            encrypted_data = encrypted_data[:-20]
-
             # Процесс дешифровки
-            decrypted = []
+            decrypted = bytearray()
             i = 0
             max_key_len = max(len(k) for k in dictionary.keys()) if dictionary else 1
             while i < len(encrypted_data):
@@ -187,35 +165,18 @@ class TextEncryptorDecryptor:
                 for l in range(min(max_key_len, len(encrypted_data) - i), 0, -1):
                     chunk = encrypted_data[i:i + l]
                     if chunk in dictionary:
-                        decrypted.append(dictionary[chunk])
+                        decrypted.extend(dictionary[chunk])
                         i += l
                         found = True
                         break
                 if not found:
-                    # Обработка обычных символов
-                    try:
-                        decrypted.append(encrypted_data[i:i + 1].decode('utf-8'))
-                    except UnicodeDecodeError:
-                        try:
-                            # Попытка декодировать как 2-байтовый символ
-                            decrypted.append(encrypted_data[i:i + 2].decode('utf-8'))
-                            i += 1
-                        except:
-                            decrypted.append('\uFFFD')  # Символ замены
-                            logging.debug("Символ замены добавлен")
+                    decrypted.extend(encrypted_data[i:i + 1])
                     i += 1
-
-            # Соединение расшифрованных частей
-            decrypted_text = ''.join(decrypted)
-
-            # Конвертация обратно в исходную кодировку
-            decrypted_bytes = decrypted_text.encode('utf-8')
-            decrypted_final = decrypted_bytes.decode(encoding)
 
             # Сохранение результата
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            with open(output_path, 'w', encoding=encoding, newline='') as f:
-                f.write(decrypted_final)
+            with open(output_path, 'wb') as f:
+                f.write(decrypted)
 
         except Exception as e:
             print(f"Ошибка при дешифровании: {str(e)}")
