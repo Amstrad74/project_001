@@ -1,16 +1,25 @@
 import os
 import re
-import zipfile
+import logging
 import chardet
-import xml.etree.ElementTree as ET
 from collections import defaultdict
 from itertools import product
 
+# Настройка логирования
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
-class AdvancedFileProcessor:
+
+class TextEncryptorDecryptor:
     """
-    Версия 1.1 с поддержкой структурированных форматов
-    и автоматическим определением кодировки
+    Версия дипфинка 1.1 с поддержкой любых кодировок
+    глючная, с удалённым блоком спецсимволов
+
+    Основные изменения:
+    1. Автоматическое определение кодировки исходного файла
+    2. Конвертация в UTF-8 для обработки
+    3. Сохранение исходной кодировки в конце файла
+    4. Обратная конвертация при дешифровании
     """
 
     FORBIDDEN_BYTES = {
@@ -19,67 +28,42 @@ class AdvancedFileProcessor:
         0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F, 0x40, 0x5B, 0x5C, 0x5D,
         0x5E, 0x5F, 0x60, 0x7B, 0x7C, 0x7D, 0x7E, 0x0D, 0x0A
     }
+    ENCODING_MARKER = b'ENCv1.2|'  # 8 байт для маркера
+    ENCODING_LENGTH = 20  # Общая длина блока с кодировкой
 
     def __init__(self, input_filename):
         self.input_filename = input_filename
         self.base_name = os.path.splitext(input_filename)[0]
-        self.encoding = 'utf-8'
-        self.is_binary = False
-
-    def detect_encoding(self, data):
-        """Определение кодировки текста"""
-        try:
-            result = chardet.detect(data)
-            if result['confidence'] > 0.7:
-                return result['encoding']
-            return 'utf-8'
-        except:
-            return 'utf-8'
-
-    def process_fb2(self, data):
-        """Обработка FB2 файлов"""
-        try:
-            root = ET.fromstring(data)
-            # Обработка текстовых узлов
-            for elem in root.iter():
-                if elem.text and elem.tag.endswith('}section'):
-                    yield ('text', elem.text)
-                elif elem.tag.endswith('}binary'):
-                    yield ('binary', (elem.attrib['id'], elem.text))
-            return 'fb2'
-        except ET.ParseError:
-            return 'txt'
-
-    def process_docx(self, file_path):
-        """Обработка DOCX файлов"""
-        with zipfile.ZipFile(file_path) as z:
-            for name in z.namelist():
-                if name.startswith('word/') and name.endswith('.xml'):
-                    with z.open(name) as f:
-                        content = f.read()
-                        yield ('text', content.decode('utf-8'))
-                else:
-                    with z.open(name) as f:
-                        yield ('binary', (name, f.read()))
+        self.original_encoding = 'utf-8'
 
     def generate_keys(self):
-        allowed_bytes = [b for b in range(0x01, 0x100) if b not in self.FORBIDDEN_BYTES]
+        """Генератор ключей переменной длины"""
         length = 1
         while True:
+            allowed_bytes = [b for b in range(0x01, 0x100) if b not in self.FORBIDDEN_BYTES]
             for combo in product(allowed_bytes, repeat=length):
                 yield bytes(combo)
             length += 1
 
+    def get_words_and_separators(self, text):
+        """Разделение текста на токены с логированием"""
+        pattern = re.compile(r'([^\x00-\x20\x7F-\xA0]+)|([\x00-\x20\x7F-\xA0])', re.UNICODE)
+        tokens = []
+        for match in pattern.finditer(text):
+            word, sep = match.groups()
+            tokens.append(word if word else sep)
+        logging.debug(f"Выделено {len(tokens)} токенов")
+        return tokens
+
     def create_dictionary(self, tokens):
+        """Создание словаря с проверкой уникальности ключей"""
         word_counts = defaultdict(int)
         for token in tokens:
             if len(token) > 1 or (len(token) == 1 and ord(token[0]) not in self.FORBIDDEN_BYTES):
                 word_counts[token] += 1
+        logging.debug(f"Уникальных слов для словаря: {len(word_counts)}")
 
-        sorted_words = sorted(
-            word_counts.items(),
-            key=lambda x: (-x[1], -len(x[0]), x[0])
-        )
+        sorted_words = sorted(word_counts.items(), key=lambda x: (-x[1], -len(x[0]), x[0]))
 
         dictionary = {}
         key_gen = self.generate_keys()
@@ -88,160 +72,139 @@ class AdvancedFileProcessor:
         for word, _ in sorted_words:
             while True:
                 key = next(key_gen)
-                if key not in used_keys:
+                if key not in used_keys and not any(b in self.FORBIDDEN_BYTES for b in key):
                     dictionary[word] = key
                     used_keys.add(key)
                     break
         return dictionary
 
     def encrypt_file(self, output_dtc_path, output_dict_path):
-        """Шифрование файла с учетом структуры"""
+        """Улучшенное шифрование с поддержкой кодировок"""
         try:
+            # Чтение и определение кодировки
             input_path = os.path.join('txt', self.input_filename)
-            file_ext = os.path.splitext(self.input_filename)[1].lower()
+            with open(input_path, 'rb') as f:
+                raw_data = f.read()
+                result = chardet.detect(raw_data)
+                self.original_encoding = result['encoding'] if result['confidence'] > 0.7 else 'utf-8'
+                logging.debug(f"Определена кодировка: {self.original_encoding}")
+
+            # Конвертация в UTF-8
+            try:
+                text = raw_data.decode(self.original_encoding)
+            except UnicodeDecodeError:
+                text = raw_data.decode('utf-8', errors='replace')
+                logging.warning("Ошибка декодирования, использован utf-8 с заменой символов")
+
+            # Основной процесс шифрования
+            tokens = self.get_words_and_separators(text)
+            dictionary = self.create_dictionary(tokens)
 
             encrypted_data = bytearray()
-            dictionaries = []
+            for token in tokens:
+                encrypted_data.extend(dictionary.get(token, token.encode('utf-8')))
 
-            # Обработка DOCX
-            if file_ext == '.docx':
-                for content_type, content in self.process_docx(input_path):
-                    if content_type == 'text':
-                        tokens = re.findall(r'\w+|\W+', content)
-                        dictionary = self.create_dictionary(tokens)
-                        for token in tokens:
-                            encrypted_data.extend(dictionary.get(token, token.encode('utf-8')))
-                        dictionaries.append(dictionary)
-                    else:
-                        encrypted_data.extend(f"BIN:{content[0]}:".encode() + content[1])
+            # Добавление метаданных о кодировке
+            encoding_info = self.ENCODING_MARKER + self.original_encoding.encode('utf-8').ljust(12)
+            encrypted_data.extend(encoding_info)
 
-            # Обработка FB2 и других текстовых форматов
-            else:
-                with open(input_path, 'rb') as f:
-                    raw_data = f.read()
-                    self.encoding = self.detect_encoding(raw_data)
-
-                try:
-                    data = raw_data.decode(self.encoding)
-                except UnicodeDecodeError:
-                    data = raw_data.decode('utf-8', errors='replace')
-                    print(f"Внимание: Файл {self.input_filename} содержит некорректные символы!")
-
-                if file_ext == '.fb2':
-                    file_type = self.process_fb2(data.encode('utf-8'))
-                    for content_type, content in self.process_fb2(data.encode('utf-8')):
-                        if content_type == 'text':
-                            tokens = re.findall(r'\w+|\W+', content)
-                            dictionary = self.create_dictionary(tokens)
-                            for token in tokens:
-                                encrypted_data.extend(dictionary.get(token, token.encode('utf-8')))
-                            dictionaries.append(dictionary)
-                        else:
-                            encrypted_data.extend(f"BIN:{content[0]}:".encode() + content[1].encode())
-                else:
-                    tokens = re.findall(r'\w+|\W+', data)
-                    dictionary = self.create_dictionary(tokens)
-                    for token in tokens:
-                        encrypted_data.extend(dictionary.get(token, token.encode(self.encoding)))
-                    dictionaries.append(dictionary)
-
-            # Сохранение данных
+            # Сохранение результатов
             os.makedirs(os.path.dirname(output_dtc_path), exist_ok=True)
             with open(output_dtc_path, 'wb') as f:
                 f.write(encrypted_data)
-
-            # Сохранение объединенного словаря
-            merged_dict = {}
-            for d in dictionaries:
-                merged_dict.update(d)
+                logging.info(f"Файл {output_dtc_path} успешно зашифрован")
 
             with open(output_dict_path, 'w', encoding='utf-8') as f:
-                for word, key in merged_dict.items():
+                for word, key in dictionary.items():
                     f.write(f"{key.hex()} {word}\n")
-                f.write(f"ENCODING:{self.encoding}\n")
+                logging.info(f"Словарь {output_dict_path} успешно создан")
 
         except Exception as e:
-            print(f"Ошибка при шифровании: {str(e)}")
+            logging.error(f"Ошибка шифрования: {str(e)}", exc_info=True)
 
     def decrypt_file(self, input_dtc_path, output_path, dict_path):
-        """Дешифрование файла"""
+        """Дешифрование с восстановлением кодировки"""
         try:
-            # Загрузка словаря и информации о кодировке
+            # Чтение зашифрованных данных
+            with open(input_dtc_path, 'rb') as f:
+                encrypted_data = f.read()
+
+            # Извлечение информации о кодировке
+            encoding_info = encrypted_data[-self.ENCODING_LENGTH:]
+            if encoding_info.startswith(self.ENCODING_MARKER):
+                self.original_encoding = encoding_info[len(self.ENCODING_MARKER):].decode('utf-8').strip()
+                encrypted_data = encrypted_data[:-self.ENCODING_LENGTH]
+                logging.debug(f"Восстановлена кодировка: {self.original_encoding}")
+            else:
+                self.original_encoding = 'utf-8'
+                logging.warning("Маркер кодировки не найден, используется utf-8")
+
+            # Загрузка словаря
             dictionary = {}
-            encoding = 'utf-8'
             with open(dict_path, 'r', encoding='utf-8') as f:
                 for line in f:
-                    if line.startswith('ENCODING:'):
-                        encoding = line.split(':')[1].strip()
-                        continue
                     parts = line.strip().split(' ', 1)
                     if len(parts) == 2:
                         key_hex, word = parts
                         try:
-                            key = bytes.fromhex(key_hex)
-                            dictionary[key] = word
+                            dictionary[bytes.fromhex(key_hex)] = word
                         except ValueError:
                             continue
 
-            with open(input_dtc_path, 'rb') as f:
-                encrypted_data = f.read()
-
-            result = bytearray()
+            # Процесс дешифровки
+            decrypted = []
             i = 0
             max_key_len = max(len(k) for k in dictionary.keys()) if dictionary else 1
 
             while i < len(encrypted_data):
-                # Обработка бинарных блоков
-                if encrypted_data[i:i+4] == b'BIN:':
-                    end_marker = encrypted_data.find(b':', i + 4)
-                    name = encrypted_data[i + 4:end_marker].decode()
-                    i = end_marker + 1
-                    size = int.from_bytes(encrypted_data[i:i + 4], 'big')
-                    i += 4
-                    result.extend(encrypted_data[i:i + size])
-                    i += size
-                    continue
-
-                # Дешифровка текста
                 found = False
                 for l in range(min(max_key_len, len(encrypted_data) - i), 0, -1):
                     chunk = encrypted_data[i:i + l]
                     if chunk in dictionary:
-                        result.extend(dictionary[chunk].encode(encoding))
+                        decrypted.append(dictionary[chunk])
                         i += l
                         found = True
                         break
                 if not found:
-                    result.extend(encrypted_data[i:i + 1])
+                    try:
+                        decrypted.append(encrypted_data[i:i + 1].decode('utf-8'))
+                    except UnicodeDecodeError:
+                        decrypted.append('\uFFFD')
                     i += 1
 
-            # Восстановление структуры DOCX
-            if output_path.endswith('.docx'):
-                with zipfile.ZipFile(output_path, 'w') as z:
-                    # Здесь должна быть логика восстановления структуры архива
-                    pass
-            else:
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                with open(output_path, 'wb') as f:
-                    f.write(result)
+            # Конвертация в исходную кодировку
+            try:
+                result = ''.join(decrypted).encode('utf-8').decode(self.original_encoding)
+            except UnicodeEncodeError:
+                result = ''.join(decrypted)
+                logging.error("Ошибка конвертации в исходную кодировку")
+
+            # Сохранение результата
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            with open(output_path, 'w', encoding=self.original_encoding, errors='replace') as f:
+                f.write(result)
+                logging.info(f"Файл {output_path} успешно дешифрован")
 
         except Exception as e:
-            print(f"Ошибка при дешифровании: {str(e)}")
+            logging.error(f"Ошибка дешифрования: {str(e)}", exc_info=True)
 
 
 if __name__ == "__main__":
-    input_filename = 'test_txt.txt'
-    processor = AdvancedFileProcessor(input_filename)
+    # Тестовые данные
+    test_file = 'test_file.txt'  # имя входящего файла
+
+    # Инициализация обработчика
+    processor = TextEncryptorDecryptor(test_file)
 
     # Шифрование
     processor.encrypt_file(
-        os.path.join('dtc', processor.base_name + '.dtc'),
-        os.path.join('dtc', processor.base_name + '.dtl')
+        os.path.join('dtc', f"{processor.base_name}.dtc"),
+        os.path.join('dtc', f"{processor.base_name}.dtl")
     )
 
     # Дешифрование
     processor.decrypt_file(
-        os.path.join('dtc', processor.base_name + '.dtc'),
-        os.path.join('decript', input_filename),
-        os.path.join('dtc', processor.base_name + '.dtl')
+        os.path.join('dtc', f"{processor.base_name}.dtc"),
+        os.path.join('decrypt', test_file),
+        os.path.join('dtc', f"{processor.base_name}.dtl")
     )

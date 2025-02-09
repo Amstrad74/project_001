@@ -1,248 +1,230 @@
-import string
+"""
+РАБОЧАЯ ВЕРСИЯ!!!
+Вариант 1.0
+"""
+import os
 import re
-import json
+from collections import defaultdict
 from itertools import product
+import logging
 
-def load_file(filename, encoding='utf-8'):
+class TextEncryptorDecryptor:
     """
-    Загружает содержимое текстового файла в строку с учетом кодировки.
-
-    :param filename: Имя текстового файла.
-    :param encoding: Кодировка файла (по умолчанию 'utf-8').
-    :return: Строка с содержимым файла.
+    Класс для шифрования и дешифрования текстовых файлов с использованием динамических ключей переменной длины.
     """
-    try:
-        with open(filename, 'r', encoding=encoding) as file:
-            return file.read()
-    except FileNotFoundError:
-        print(f"Файл '{filename}' не найден. Создан новый файл.")
-        with open(filename, 'w', encoding=encoding) as file:
-            pass
-        return ""
-    except UnicodeDecodeError:
-        print(f"Ошибка декодирования файла '{filename}' с кодировкой '{encoding}'. Попытка с другой кодировкой.")
-        if encoding == 'utf-8':
-            try:
-                with open(filename, 'r', encoding='cp1251') as file:
-                    content = file.read()
-                # Сохраняем файл в 'utf-8'
-                with open(filename, 'w', encoding='utf-8') as file_utf8:
-                    file_utf8.write(content)
-                return content
-            except Exception as e:
-                print(f"Не удалось прочитать файл '{filename}': {e}")
-                return ""
-        else:
-            return ""
-    except IOError as e:
-        print(f"Ошибка при чтении файла '{filename}': {e}")
-        return ""
 
-def save_file(filename, content, encoding='utf-8'):
-    """
-    Сохраняет содержимое в текстовый файл с указанной кодировкой.
+    # Множество запрещенных байтов, которые не могут использоваться в ключах
+    FORBIDDEN_BYTES = {
+        0x00, 0x09, 0x20, 0xA0, 0xC2, 0x21, 0x22, 0x23, 0x24, 0x25,
+        0x26, 0x27, 0x28, 0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F,
+        0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F, 0x40, 0x5B, 0x5C, 0x5D,
+        0x5E, 0x5F, 0x60, 0x7B, 0x7C, 0x7D, 0x7E, 0x0D, 0x0A
+    }
 
-    :param filename: Имя файла для сохранения.
-    :param content: Строка с содержимым для сохранения.
-    :param encoding: Кодировка для сохранения (по умолчанию 'utf-8').
-    """
-    try:
-        with open(filename, 'w', encoding=encoding) as file:
-            file.write(content)
-    except IOError as e:
-        print(f"Ошибка при записи в файл '{filename}': {e}")
+    def __init__(self, input_filename):
+        """
+        Инициализация объекта шифратора/дешифратора.
 
-def split_into_words(text):
-    """
-    Разделяет текст на слова и разделительные символы.
+        :param input_filename: Имя входного файла
+        """
+        self.input_filename = input_filename
+        self.base_name = os.path.splitext(input_filename)[0]
+        self.current_key_length = 1  # Текущая длина генерируемых ключей
 
-    :param text: Исходный текст.
-    :return: Список слов и разделительных символов.
-    """
-    # Шаблон для поиска слов и разделителей
-    pattern = r'(\w+|[^\w\s]+|\s+)'
-    return re.findall(pattern, text)
+    def generate_keys(self):
+        """
+        Генератор ключей переменной длины.
 
-def create_word_dictionary(words):
-    """
-    Создает словарь слов с частотой и уникальным кодом.
+        :yield: bytes - ключ в виде байтовой строки
+        """
+        length = 1
+        while True:
+            # Генерируем все комбинации разрешенных байтов для текущей длины
+            allowed_bytes = [b for b in range(0x01, 0x100) if b not in self.FORBIDDEN_BYTES]
+            for combo in product(allowed_bytes, repeat=length):
+                yield bytes(combo)
+            length += 1  # Увеличиваем длину ключа при исчерпании комбинаций
 
-    :param words: Список слов.
-    :return: Словарь с кодами слов и обратный словарь для декодирования.
-    """
-    # Подсчитываем частоту слов
-    frequency = {}
-    for word in words:
-        frequency[word] = frequency.get(word, 0) + 1
+    def get_words_and_separators(self, text):
+        """
+        Разделяет текст на слова и разделители.
 
-    # Сортируем слова по частоте (по убыванию) и по длине (по убыванию)
-    sorted_words = sorted(frequency.items(), key=lambda x: (-x[1], -len(x[0])))
+        :param text: Исходный текст
+        :return: list - список токенов (слов и разделителей)
+        """
+        # Регулярное выражение для разделения на слова и специальные символы
+        pattern = re.compile(
+            r'([^\x00-\x20\x7F-\xA0]+)|([\x00-\x20\x7F-\xA0])',
+            re.UNICODE
+        )
+        tokens = []
+        for match in pattern.finditer(text):
+            word, sep = match.groups()
+            if word:
+                tokens.append(word)
+            elif sep:
+                tokens.append(sep)
+        return tokens
 
-    # Генерируем уникальные коды
-    codes = generate_codes(len(sorted_words))
+    def create_dictionary(self, tokens):
+        """
+        Создает словарь для шифрования с ключами переменной длины.
 
-    # Создаем словарь с кодами и обратный словарь для декодирования
-    word_dict = {}
-    reverse_dict = {}
-    for i, (word, freq) in enumerate(sorted_words):
-        word_dict[word] = codes[i]
-        reverse_dict[codes[i]] = word
+        :param tokens: Список токенов
+        :return: dict - словарь {слово: ключ}
+        """
+        word_counts = defaultdict(int)
 
-    return word_dict, reverse_dict
+        # Подсчет частоты слов (исключая разделители)
+        for token in tokens:
+            if len(token) > 1 or (len(token) == 1 and ord(token[0]) not in self.FORBIDDEN_BYTES):
+                word_counts[token] += 1
 
-def generate_codes(count):
-    """
-    Генерирует уникальные коды без ведущих нулей.
+        # Сортировка слов по важности
+        sorted_words = sorted(
+            word_counts.items(),
+            key=lambda x: (-x[1], -len(x[0]), x[0])
+        )
 
-    :param count: Количество необходимых кодов.
-    :return: Список уникальных кодов.
-    """
-    codes = set()
-    current_length = 1
-    while len(codes) < count:
-        if current_length > 3:
-            current_length += 1
-            continue
-        alphabet = string.ascii_letters + string.digits
-        possible_codes = [''.join(p) for p in product(alphabet, repeat=current_length)]
-        for code in possible_codes:
-            if code not in codes:
-                codes.add(code)
-                if len(codes) == count:
+        dictionary = {}
+        key_gen = self.generate_keys()
+        used_keys = set()
+
+        for word, _ in sorted_words:
+            while True:
+                key = next(key_gen)
+                if key not in used_keys:
+                    dictionary[word] = key
+                    used_keys.add(key)
                     break
-        current_length += 1
+        return dictionary
 
-    return list(codes)
+    def encrypt_file(self, output_dtc_path, output_dict_path):
+        """
+        Шифрует файл и сохраняет словарь.
 
-def encrypt_text(text, word_dict):
-    """
-    Зашифровывает текст, используя словарь слов.
+        :param output_dtc_path: Путь для зашифрованного файла
+        :param output_dict_path: Путь для файла словаря
+        """
+        try:
+            # Чтение файла с учетом BOM
+            with open(os.path.join('txt', self.input_filename), 'r', encoding='utf-8-sig') as f:
+                text = f.read()
 
-    :param text: Исходный текст.
-    :param word_dict: Словарь с кодами слов.
-    :return: Зашифрованная строка.
-    """
-    tokens = split_into_words(text)
-    encrypted_tokens = []
-    for token in tokens:
-        if re.match(r'\w+', token):
-            encrypted_tokens.append(word_dict.get(token, token))
-        else:
-            encrypted_tokens.append(token)
-    return ' '.join(encrypted_tokens)
+            tokens = self.get_words_and_separators(text)
+            dictionary = self.create_dictionary(tokens)
 
-def decrypt_text(encrypted_text, reverse_dict):
-    """
-    Расшифровывает текст, используя обратный словарь.
+            encrypted_data = bytearray()
+            for token in tokens:
+                if token in dictionary:
+                    encrypted_data.extend(dictionary[token])
+                else:
+                    # Кодирование специальных символов
+                    if token == '\t':
+                        encrypted_data.extend(b'\x09')
+                    elif token == '\n':
+                        encrypted_data.extend(b'\x0D\x0A')
+                    elif token == '\xa0':
+                        encrypted_data.extend(b'\xC2\xA0')
+                    else:
+                        encrypted_data.extend(token.encode('utf-8'))
 
-    :param encrypted_text: Зашифрованная строка.
-    :param reverse_dict: Обратный словарь для декодирования.
-    :return: Исходный текст.
-    """
-    tokens = encrypted_text.split()
-    decrypted_tokens = []
-    for token in tokens:
-        if token in reverse_dict:
-            decrypted_tokens.append(reverse_dict[token])
-        else:
-            decrypted_tokens.append(token)
-    return ''.join(decrypted_tokens)
+            # Сохранение зашифрованных данных
+            os.makedirs(os.path.dirname(output_dtc_path), exist_ok=True)
+            with open(output_dtc_path, 'wb') as f:
+                f.write(encrypted_data)
 
-def save_library(library, library_filename):
-    """
-    Сохраняет библиотеку слов в файл в формате JSON.
+            # Сохранение словаря
+            with open(output_dict_path, 'w', encoding='utf-8') as f:
+                for word, key in dictionary.items():
+                    f.write(f"{key.hex()} {word}\n")
 
-    :param library: Словарь с библиотекой слов.
-    :param library_filename: Имя файла для сохранения библиотеки.
-    """
-    try:
-        with open(library_filename, 'w', encoding='utf-8') as file:
-            json.dump(library, file, ensure_ascii=False, indent=4)
-    except IOError as e:
-        print(f"Ошибка при записи в файл библиотеки '{library_filename}': {e}")
+        except Exception as e:
+            print(f"Ошибка при шифровании: {str(e)}")
 
-def load_library(library_filename):
-    """
-    Загружает библиотеку слов из файла в формате JSON.
+    def decrypt_file(self, input_dtc_path, output_path, dict_path):
+        """
+        Дешифрует файл с использованием словаря.
 
-    :param library_filename: Имя файла библиотеки.
-    :return: Словарь с библиотекой слов.
-    """
-    library = {}
-    try:
-        with open(library_filename, 'r', encoding='utf-8') as file:
-            library = json.load(file)
-    except FileNotFoundError:
-        print(f"Файл библиотеки '{library_filename}' не найден.")
-    except IOError as e:
-        print(f"Ошибка при чтении файла библиотеки '{library_filename}': {e}")
-    return library
+        :param input_dtc_path: Путь к зашифрованному файлу
+        :param output_path: Путь для дешифрованного файла
+        :param dict_path: Путь к файлу словаря
+        """
+        try:
+            # Загрузка словаря
+            dictionary = {}
+            with open(dict_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parts = line.split(' ', 1)
+                    if len(parts) != 2:
+                        continue
+                    key_hex, word = parts
+                    try:
+                        key = bytes.fromhex(key_hex)
+                        dictionary[key] = word
+                    except ValueError:
+                        continue
 
-def main():
-    # Запрос режима работы
-    print("Выберите режим работы:")
-    print("1. Запаковать")
-    print("2. Расшифровать")
-    choice = input("Введите 1 или 2: ").strip()
+            # Чтение зашифрованных данных
+            with open(input_dtc_path, 'rb') as f:
+                encrypted_data = f.read()
 
-    if choice == '1':
-        # Режим запаковки
-        input_filename = input("Введите имя текстового файла: ")
+            # Процесс дешифровки
+            decrypted = []
+            i = 0
+            max_key_len = max(len(k) for k in dictionary.keys()) if dictionary else 1
 
-        # Загрузка файла в строку
-        file_line = load_file(input_filename, encoding='utf-8')  # Исправлено на 'utf-8'
-        if not file_line:
-            return
+            while i < len(encrypted_data):
+                found = False
+                # Поиск самого длинного возможного ключа
+                for l in range(min(max_key_len, len(encrypted_data) - i), 0, -1):
+                    chunk = encrypted_data[i:i + l]
+                    if chunk in dictionary:
+                        decrypted.append(dictionary[chunk])
+                        i += l
+                        found = True
+                        break
+                if not found:
+                    # Обработка обычных символов
+                    try:
+                        decrypted.append(encrypted_data[i:i + 1].decode('utf-8'))
+                    except UnicodeDecodeError:
+                        try:
+                            # Попытка декодировать как 2-байтовый символ
+                            decrypted.append(encrypted_data[i:i + 2].decode('utf-8'))
+                            i += 1
+                        except:
+                            decrypted.append('\uFFFD')  # Символ замены
+                            logging.debug("Символ замены добавлен")
 
-        # Разделение текста на токены
-        tokens = split_into_words(sanitize_text(file_line))
+                    i += 1
 
-        # Загрузка существующей библиотеки
-        library_filename = 'library.json'
-        library = load_library(library_filename)
+            # Сохранение результата
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            with open(output_path, 'w', encoding='utf-8', newline='') as f:
+                f.write(''.join(decrypted))
 
-        # Создание словаря новых слов и обновление библиотеки
-        new_word_dict, reverse_dict = create_word_dictionary(tokens, library)
+        except Exception as e:
+            print(f"Ошибка при дешифровании: {str(e)}")
 
-        # Зашифровывание текста
-        encrypted_text = encrypt_text(sanitized_text, new_word_dict)
-
-        # Ввод имени выходного файла
-        output_filename = input("Введите имя выходного файла (с расширением .dtc): ")
-
-        # Сохранение зашифрованного текста в файл
-        save_file(output_filename, encrypted_text, encoding='utf-8')
-
-        # Сохранение обновленной библиотеки
-        save_library(new_word_dict, library_filename)
-
-    elif choice == '2':
-        # Режим расшифровки
-        input_filename = input("Введите имя архивного файла (с расширением .dtc): ")
-
-        # Загрузка файла в строку
-        file_line = load_file(input_filename, encoding='utf-8')
-        if not file_line:
-            return
-
-        # Загрузка существующей библиотеки
-        library_filename = 'library.json'
-        library = load_library(library_filename)
-
-        # Создание обратного словаря для декодирования
-        reverse_dict = {code: word for word, code in library.items()}
-
-        # Расшифровывание текста
-        decrypted_text = decrypt_text(file_line, reverse_dict)
-
-        # Ввод имени выходного файла
-        output_filename = input("Введите имя выходного файла: ")
-
-        # Сохранение расшифрованного текста в файл
-        save_file(output_filename, decrypted_text, encoding='utf-8')
-
-    else:
-        print("Неверный выбор. Пожалуйста, выберите 1 для запаковки или 2 для расшифровки.")
 
 if __name__ == "__main__":
-    main()
+    # Пример использования
+    input_filename = 'test_file.txt'
+    ed = TextEncryptorDecryptor(input_filename)
+
+    # Шифрование
+    ed.encrypt_file(
+        os.path.join('dtc', ed.base_name + '.dtc'),
+        os.path.join('dtc', ed.base_name + '.dtl')
+    )
+
+    # Дешифрование
+    ed.decrypt_file(
+        os.path.join('dtc', ed.base_name + '.dtc'),
+        os.path.join('decrypt', input_filename),
+        os.path.join('dtc', ed.base_name + '.dtl')
+    )
