@@ -1,3 +1,6 @@
+# Версия 1.2
+# Работает с utf-8 txt без ошибок, побайтовое совпадение.
+
 import os
 import re
 from collections import defaultdict
@@ -46,16 +49,17 @@ class TextEncryptorDecryptor:
         :return: list - список токенов (слов и разделителей)
         """
         # Регулярное выражение для разделения на слова и специальные символы
+        # Разделители: все запрещенные байты и специальные двубайтные символы
         pattern = re.compile(
-            br'([^\x00-\x20]+)|([\x00-\x20])'
+            br'([\x00-\x20\xA0\xC2\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E]|[\xC2\xA0])|([^\x00-\x20\xA0\xC2\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E\xC2\xA0]+)'
         )
         tokens = []
         for match in pattern.finditer(data):
-            word, sep = match.groups()
-            if word:
-                tokens.append(word)
-            elif sep:
+            sep, word = match.groups()
+            if sep:
                 tokens.append(sep)
+            elif word:
+                tokens.append(word)
         return tokens
 
     def create_dictionary(self, tokens):
@@ -105,26 +109,52 @@ class TextEncryptorDecryptor:
                 data = f.read()
 
             tokens = self.get_words_and_separators(data)
+            logging.debug(f"Токены: {tokens}")
+
             dictionary = self.create_dictionary(tokens)
+            logging.debug(f"Словарь: {dictionary}")
+
             encrypted_data = bytearray()
+
             for token in tokens:
+                logging.debug(f"Обработка токена: {token}")
                 if token in dictionary:
                     encrypted_data.extend(dictionary[token])
+                    logging.debug(f"Токен найден в словаре: {token} -> {dictionary[token]}")
                 else:
-                    encrypted_data.extend(token)
+                    # Кодирование специальных символов
+                    if token == b'\t':
+                        encrypted_data.extend(b'\x09')
+                        logging.debug(f"Токен является табуляцией: {token} -> \\t")
+                    elif token == b'\n':
+                        encrypted_data.extend(b'\x0A')
+                        logging.debug(f"Токен является новой строкой: {token} -> \\n")
+                    elif token == b'\r\n':
+                        encrypted_data.extend(b'\x0D\x0A')
+                        logging.debug(f"Токен является новой строкой (CR+LF): {token} -> \\r\\n")
+                    elif token == b'\xC2\xA0':
+                        encrypted_data.extend(b'\xC2\xA0')
+                        logging.debug(f"Токен является непереносимым пробелом: {token} -> \\xa0")
+                    else:
+                        encrypted_data.extend(token)
+                        logging.debug(f"Токен добавлен как есть: {token}")
 
             # Сохранение зашифрованных данных
             os.makedirs(os.path.dirname(output_dtc_path), exist_ok=True)
             with open(output_dtc_path, 'wb') as f:
                 f.write(encrypted_data)
+            logging.info(f"Зашифрованные данные сохранены в {output_dtc_path}")
 
             # Сохранение словаря
             with open(output_dict_path, 'w', encoding='utf-8') as f:
                 for word, key in dictionary.items():
                     f.write(f"{key.hex()} {word.decode('utf-8')}\n")
+            logging.info(f"Словарь сохранен в {output_dict_path}")
 
+        except FileNotFoundError:
+            logging.error(f"Файл {self.input_filename} не найден")
         except Exception as e:
-            print(f"Ошибка при шифровании: {str(e)}")
+            logging.error(f"Ошибка при шифровании: {str(e)}")
 
     def decrypt_file(self, input_dtc_path, output_path, dict_path):
         """
@@ -149,7 +179,7 @@ class TextEncryptorDecryptor:
                         key = bytes.fromhex(key_hex)
                         dictionary[key] = word.encode('utf-8')
                     except ValueError:
-                        continue
+                        logging.warning(f"Неверный формат ключа: {key_hex}")
 
             # Чтение зашифрованных данных
             with open(input_dtc_path, 'rb') as f:
@@ -159,6 +189,7 @@ class TextEncryptorDecryptor:
             decrypted = bytearray()
             i = 0
             max_key_len = max(len(k) for k in dictionary.keys()) if dictionary else 1
+
             while i < len(encrypted_data):
                 found = False
                 # Поиск самого длинного возможного ключа
@@ -177,12 +208,15 @@ class TextEncryptorDecryptor:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             with open(output_path, 'wb') as f:
                 f.write(decrypted)
+            logging.info(f"Дешифрованные данные сохранены в {output_path}")
 
+        except FileNotFoundError:
+            logging.error(f"Файл {input_dtc_path} или {dict_path} не найден")
         except Exception as e:
-            print(f"Ошибка при дешифровании: {str(e)}")
+            logging.error(f"Ошибка при дешифровании: {str(e)}")
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
     # Пример использования
     input_filename = 'test_file.txt'
     ed = TextEncryptorDecryptor(input_filename)
