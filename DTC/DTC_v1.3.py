@@ -1,4 +1,4 @@
-
+# DTC_v1.3.py
 
 # Версия 1.3
 # Работает с utf-8 txt без ошибок, побайтовое совпадение.
@@ -10,6 +10,7 @@ from collections import defaultdict
 from itertools import product
 import logging
 import chardet
+import pyzpaq
 
 class TextEncryptorDecryptor:
     """
@@ -187,7 +188,7 @@ class TextEncryptorDecryptor:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-    input_filename = 'test_utf8.txt'
+    input_filename = 'test3.txt'
     ed = TextEncryptorDecryptor(input_filename)
     ed.encrypt_file(
         os.path.join('dtc', ed.base_name + '.dtc'),
