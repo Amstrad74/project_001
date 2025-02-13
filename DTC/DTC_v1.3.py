@@ -10,7 +10,7 @@ from collections import defaultdict
 from itertools import product
 import logging
 import chardet
-import pyzpaq
+# import pyzpaq
 
 class TextEncryptorDecryptor:
     """
