@@ -99,6 +99,10 @@ class TextEncryptorDecryptor:
                     encrypted_data.extend(b'\x0D\x0A')
                 elif token == b'\xC2\xA0':
                     encrypted_data.extend(b'\xC2\xA0')
+                elif token == b'\xC2\xAB':
+                    encrypted_data.extend(b'\xC2\xAB')
+                elif token == b'\xC2\xBB':
+                    encrypted_data.extend(b'\xC2\xBB')
                 else:
                     encrypted_data.extend(token)
 
@@ -188,7 +192,7 @@ class TextEncryptorDecryptor:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-    input_filename = 'test3.txt'
+    input_filename = 'test10.txt'
     ed = TextEncryptorDecryptor(input_filename)
     ed.encrypt_file(
         os.path.join('dtc', ed.base_name + '.dtc'),
